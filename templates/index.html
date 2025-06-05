@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OrbitView Live Pro – Multi-Satellite Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        :root {
+            --accent: #667eea;
+            --accent2: #764ba2;
+            --bg-main: #232946;
+            --bg-panel: #1a1a2e;
+            --text-main: #fff;
+            --text-secondary: #a5b4fc;
+        }
+        body.light {
+            --bg-main: #f4f6fa;
+            --bg-panel: #fff;
+            --text-main: #232946;
+            --text-secondary: #667eea;
+        }
+        body {
+            background: linear-gradient(120deg, var(--bg-main) 0%, var(--bg-panel) 100%);
+            color: var(--text-main);
+            transition: background 0.4s, color 0.4s;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 320px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            overflow-y: auto;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-280px);
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            text-align: center;
+        }
+
+        .sidebar-header h1 {
+            font-size: 1.5em;
+            margin-bottom: 5px;
+        }
+
+        .sidebar-header p {
+            opacity: 0.8;
+            font-size: 0.9em;
+        }
+
+        .toggle-btn {
+            position: absolute;
+            top: 20px;
+            left: 340px;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.3s ease;
+        }
+
+        .toggle-btn:hover {
+            background: rgba(0, 0, 0, 0.9);
+            transform: scale(1.1);
+        }
+
+        .satellite-list {
+            padding: 20px;
+        }
+
+        .satellite-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .satellite-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .satellite-item:hover::before {
+            left: 100%;
+        }
+
+        .satellite-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            border-color: rgba(102, 126, 234, 0.5);
+        }
+
+        .satellite-item.active {
+            background: rgba(102, 126, 234, 0.2);
+            border-color: #667eea;
+        }
+
+        /* --- Control Station Sidebar Styles --- */
+        .control-station-list {
+            padding: 0 20px 20px 20px;
+        }
+        .control-station-item {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(102,126,234,0.15);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: background 0.2s, border 0.2s;
+        }
+        .control-station-item:hover, .control-station-item.active {
+            background: rgba(102,126,234,0.15);
+            border-color: #667eea;
+        }
+
+        .satellite-name {
+            font-weight: bold;
+            font-size: 1.1em;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+
+        .satellite-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 10px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-active { background: #4CAF50; }
+        .status-inactive { background: #f44336; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .satellite-info {
+            font-size: 0.9em;
+            opacity: 0.8;
+            line-height: 1.4;
+        }
+
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .control-btn {
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .control-btn:hover {
+            background: rgba(102, 126, 234, 0.8);
+            transform: scale(1.05);
+        }
+
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+        }
+
+        .info-panel.visible {
+            transform: translateY(0);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+
+        .search-box {
+            margin: 20px;
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 40px 12px 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 25px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 14px;
+        }
+
+        .search-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .search-icon {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0.5;
+        }
+
+        .orbital-path {
+            stroke: #667eea;
+            fill: none;
+            stroke-width: 2;
+            opacity: 0.6;
+            stroke-dasharray: 5,5;
+            animation: dash 20s linear infinite;
+        }
+
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -200;
+            }
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(76, 175, 80, 0.9);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            z-index: 2000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .loading-spinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            z-index: 1001;
+        }
+
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        /* Control Station Passes Styles */
+        #controlStationTab {
+            position: fixed;
+            top: 20px;
+            right: 30px;
+            z-index: 1001;
+            background: #667eea;
+            color: #fff;
+            border: none;
+            border-radius: 6px 6px 0 0;
+            padding: 10px 22px;
+            font-size: 1.1em;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            transition: background 0.2s;
+        }
+        #controlStationTab.active {
+            background: #4c51bf;
+        }
+        #controlStationPasses {
+            display: none;
+            position: fixed;
+            top: 60px;
+            right: 30px;
+            width: 370px;
+            max-height: 80vh;
+            overflow-y: auto;
+            background: #232946;
+            color: #fff;
+            border-radius: 0 0 10px 10px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+            z-index: 1000;
+            padding: 18px 20px 18px 20px;
+            font-size: 1em;
+        }
+        .control-station-block {
+            margin-bottom: 28px;
+            border-bottom: 1px solid #3a3a5a;
+            padding-bottom: 12px;
+        }
+        .control-station-block:last-child {
+            border-bottom: none;
+        }
+        .station-title {
+            font-weight: bold;
+            font-size: 1.13em;
+            margin-bottom: 6px;
+            color: #a5b4fc;
+        }
+        .sat-pass-list, .sat-past-list {
+            margin: 0 0 8px 0;
+            padding: 0;
+            list-style: none;
+        }
+        .sat-pass-list li, .sat-past-list li {
+            margin-bottom: 3px;
+            padding: 3px 0 3px 0;
+            border-radius: 4px;
+        }
+        .sat-pass-list li {
+            background: #2d3561;
+        }
+        .sat-past-list li {
+            background: #3a3a5a;
+            color: #bfc9e0;
+            font-size: 0.97em;
+        }
+        .sat-pass-time {
+            color: #facc15;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+        .sat-past-time {
+            color: #a0aec0;
+            margin-left: 8px;
+        }
+
+        .dropdown-section {
+            margin-bottom: 10px;
+        }
+        .dropdown-header {
+            font-weight: bold;
+            font-size: 1.08em;
+            padding: 12px 10px 12px 18px;
+            background: rgba(102,126,234,0.10);
+            color: #a5b4fc;
+            cursor: pointer;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .dropdown-header:hover {
+            background: rgba(102,126,234,0.18);
+        }
+        .dropdown-arrow {
+            font-size: 1.1em;
+            margin-left: 8px;
+            transition: transform 0.2s;
+        }
+        .dropdown-header.collapsed .dropdown-arrow {
+            transform: rotate(-90deg);
+        }
+
+        /* --- Station Details Slide-in Panel Styles --- */
+        #stationDetailsPanel {
+            position: fixed;
+            top: 0;
+            right: -480px;
+            width: 420px;
+            height: 100vh;
+            background: #1a1a2e;
+            color: #fff;
+            z-index: 2002;
+            box-shadow: -4px 0 24px rgba(0,0,0,0.25);
+            transition: right 0.35s cubic-bezier(.4,2,.6,1);
+            padding: 0;
+            overflow-y: auto;
+            border-radius: 16px 0 0 16px;
+        }
+        #stationDetailsPanel.open {
+            right: 0;
+        }
+        .station-details-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 28px 28px 10px 28px;
+            border-bottom: 1px solid #232946;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 16px 0 0 0;
+        }
+        .station-details-header h2 {
+            font-size: 1.35em;
+            margin: 0;
+            color: #fff;
+        }
+        .station-details-close {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 1.7em;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+        .station-details-close:hover {
+            opacity: 1;
+        }
+        .station-details-body {
+            padding: 24px 28px 28px 28px;
+        }
+        .station-meta {
+            margin-bottom: 18px;
+            font-size: 1.05em;
+            color: #a5b4fc;
+        }
+        .station-meta span {
+            display: inline-block;
+            margin-right: 18px;
+        }
+        .station-status {
+            margin-bottom: 18px;
+            font-size: 1.08em;
+        }
+        .station-status .dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            background: #4CAF50;
+            box-shadow: 0 0 8px #4CAF50;
+        }
+        .station-status .dot.inactive {
+            background: #f44336;
+            box-shadow: 0 0 8px #f44336;
+        }
+        /* Timeline styles */
+        .timeline {
+            position: relative;
+            margin: 24px 0 18px 0;
+            padding-left: 30px;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 12px;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(180deg, #667eea 0%, #a5b4fc 100%);
+            border-radius: 2px;
+            opacity: 0.5;
+        }
+        .timeline-event {
+            position: relative;
+            margin-bottom: 28px;
+            padding-left: 18px;
+        }
+        .timeline-dot {
+            position: absolute;
+            left: -18px;
+            top: 2px;
+            width: 18px;
+            height: 18px;
+            background: #232946;
+            border: 4px solid #667eea;
+            border-radius: 50%;
+            z-index: 1;
+            box-shadow: 0 0 0 2px #232946;
+            transition: border-color 0.2s;
+        }
+        .timeline-event.next .timeline-dot {
+            border-color: #facc15;
+            box-shadow: 0 0 12px #facc15;
+        }
+        .timeline-event .timeline-content {
+            background: rgba(102,126,234,0.08);
+            border-radius: 8px;
+            padding: 12px 18px;
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .timeline-event .sat-name {
+            font-weight: bold;
+            font-size: 1.08em;
+            color: #a5b4fc;
+        }
+        .timeline-event .sat-pass-time {
+            color: #facc15;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .timeline-event .badge {
+            display: inline-block;
+            background: #4CAF50;
+            color: #fff;
+            font-size: 0.8em;
+            border-radius: 6px;
+            padding: 2px 8px;
+            margin-left: 10px;
+        }
+        .timeline-event .badge.demo {
+            background: #667eea;
+        }
+        .timeline-event:last-child {
+            margin-bottom: 0;
+        }
+        .timeline-label {
+            font-size: 1.08em;
+            color: #a5b4fc;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        .timeline-empty {
+            color: #bfc9e0;
+            font-size: 1em;
+            margin: 18px 0;
+        }
+
+        /* --- Theme and Color Controls --- */
+        #themeToggleBtn {
+            position: fixed;
+            top: 24px;
+            right: 36px;
+            z-index: 3002;
+            background: #667eea;
+            color: #fff;
+            border: none;
+            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            font-size: 1.3em;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            cursor: pointer;
+        }
+        #accentColorPicker, #bgColorPicker {
+            position: fixed;
+            top: 24px;
+            right: 80px;
+            z-index: 3002;
+            width: 32px;
+            height: 32px;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            border-radius: 50%;
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h1>🛰 OrbitView Pro</h1>
+                <p>Real-time satellite tracking</p>
+            </div>
+            <!-- Satellites Dropdown -->
+            <div class="dropdown-section">
+                <div class="dropdown-header" id="satelliteDropdownHeader">🛰 Satellites <span class="dropdown-arrow" id="satelliteDropdownArrow">▼</span></div>
+                <div id="satelliteDropdownContent" style="display:block;">
+                    <div class="search-box" style="margin:10px 10px 0 10px;">
+                        <input type="text" class="search-input" placeholder="Search satellites..." id="searchInputSat">
+                        <span class="search-icon">🔍</span>
+                    </div>
+                    <div class="satellite-list" id="satelliteList"></div>
+                </div>
+            </div>
+            <!-- Ground Stations Dropdown -->
+            <div class="dropdown-section">
+                <div class="dropdown-header" id="stationDropdownHeader">🏢 Ground Stations <span class="dropdown-arrow" id="stationDropdownArrow">▼</span></div>
+                <div id="stationDropdownContent" style="display:block;">
+                    <div class="search-box" style="margin:10px 10px 0 10px;">
+                        <input type="text" class="search-input" placeholder="Search stations..." id="searchInputStation">
+                        <span class="search-icon">🔍</span>
+                    </div>
+                    <div class="control-station-list" id="controlStationList"></div>
+                </div>
+            </div>
+        </div>
+
+        <button class="toggle-btn" id="toggleBtn">☰</button>
+
+        <div class="map-container">
+            <div id="map"></div>
+            <div class="loading-spinner" id="loadingSpinner"></div>
+            
+            <div class="controls">
+                <button class="control-btn" id="playPauseBtn" title="Play/Pause tracking">⏸</button>
+                <button class="control-btn" id="speedBtn" title="Change update speed">⚡</button>
+                <button class="control-btn" id="pathBtn" title="Toggle orbital paths">🛤</button>
+                <button class="control-btn" id="infoBtn" title="Show statistics">📊</button>
+                <button class="control-btn" id="viewBtn" title="Change map view">🌍</button>
+            </div>
+
+            <div class="info-panel" id="infoPanel">
+                <h3>Mission Statistics</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="activeSats">0</div>
+                        <div class="stat-label">Active Satellites</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="avgAltitude">0 km</div>
+                        <div class="stat-label">Avg Altitude</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="updateInterval">10s</div>
+                        <div class="stat-label">Update Rate</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="lastUpdate">--:--</div>
+                        <div class="stat-label">Last Update</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <!-- Recent Activity Widget -->
+    <div id="recentActivityWidget" style="position:fixed;bottom:30px;right:30px;z-index:3000;width:340px;background:#232946;color:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,0.25);padding:0;display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px 10px 18px;border-bottom:1px solid #3a3a5a;cursor:move;">
+            <span style="font-weight:bold;font-size:1.1em;">🕒 Recent Activity</span>
+            <button id="closeActivityWidgetBtn" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;opacity:0.7;">&times;</button>
+        </div>
+        <div id="activityFeed" style="max-height:260px;overflow-y:auto;padding:12px 18px 18px 18px;font-size:0.98em;"></div>
+    </div>
+    <button id="toggleActivityWidgetBtn" title="Show Recent Activity" style="position:fixed;bottom:30px;right:30px;z-index:3001;background:#667eea;color:#fff;border:none;border-radius:50%;width:54px;height:54px;font-size:1.7em;box-shadow:0 4px 16px rgba(0,0,0,0.18);cursor:pointer;">🕒</button>
+
+    <!-- Add Control Station Passes Tab and Section -->
+    <button id="controlStationTab">Control Station Passes</button>
+    <div id="controlStationPasses"></div>
+
+    <!-- Station Details Panel -->
+    <div id="stationDetailsPanel"></div>
+
+    <!-- Theme/Color Controls -->
+    <div style="position:fixed;top:24px;right:36px;z-index:3002;display:flex;gap:12px;align-items:center;">
+        <button id="themeToggleBtn" title="Toggle Dark/Light Mode" style="background:#232946;color:#fff;border:none;border-radius:50%;width:38px;height:38px;font-size:1.3em;box-shadow:0 2px 8px rgba(0,0,0,0.12);cursor:pointer;">🌙</button>
+        <input type="color" id="accentColorPicker" title="Pick Accent Color" style="width:32px;height:32px;border:none;outline:none;cursor:pointer;border-radius:50%;background:transparent;">
+        <input type="color" id="bgColorPicker" title="Pick Background Gradient" style="width:32px;height:32px;border:none;outline:none;cursor:pointer;border-radius:50%;background:transparent;">
+    </div>
+
+    <script>
+        // Enhanced Satellite Tracker
+        class SatelliteTracker {
+            constructor() {
+                this.map = null;
+                this.satellites = new Map();
+                this.markers = new Map();
+                this.paths = new Map();
+                this.isPlaying = true;
+                this.updateInterval = 10000;
+                this.showPaths = false;
+                this.currentView = 'satellite';
+                this.selectedSatellite = null;
+                this.activityFeed = [];
+                this.maxActivityFeed = 30;
+                
+                this.initializeMap();
+                this.initializeUI();
+                this.loadSatellitesFromAPI();
+                this.startTracking();
+                this.setupActivityWidget();
+                this.loadTheme();
+                this.setupThemeControls();
+            }
+
+            initializeMap() {
+                this.map = L.map('map', {
+                    center: [20.5937, 78.9629],
+                    zoom: 2,
+                    zoomControl: false,
+                    worldCopyJump: true
+                });
+
+                // Multiple tile layers
+                this.tileLayers = {
+                    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                        attribution: 'Tiles &copy; Esri'
+                    }),
+                    street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap contributors'
+                    }),
+                    dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '© CARTO'
+                    })
+                };
+
+                this.tileLayers.dark.addTo(this.map);
+
+                // Add zoom control to bottom right
+                L.control.zoom({ position: 'bottomright' }).addTo(this.map);
+
+                // Custom legend
+                this.addLegend();
+            }
+
+            initializeUI() {
+                // Toggle sidebar
+                document.getElementById('toggleBtn').addEventListener('click', () => {
+                    const sidebar = document.getElementById('sidebar');
+                    const toggleBtn = document.getElementById('toggleBtn');
+                    sidebar.classList.toggle('collapsed');
+                    toggleBtn.style.left = sidebar.classList.contains('collapsed') ? '20px' : '340px';
+                });
+
+                // Control buttons
+                document.getElementById('playPauseBtn').addEventListener('click', () => this.togglePlayPause());
+                document.getElementById('speedBtn').addEventListener('click', () => this.changeSpeed());
+                document.getElementById('pathBtn').addEventListener('click', () => this.togglePaths());
+                document.getElementById('infoBtn').addEventListener('click', () => this.toggleInfo());
+                document.getElementById('viewBtn').addEventListener('click', () => this.changeView());
+
+                // Search functionality
+                document.getElementById('searchInputSat').addEventListener('input', (e) => {
+                    this.filterSatellites(e.target.value);
+                });
+                document.getElementById('searchInputStation').addEventListener('input', (e) => {
+                    this.filterStations(e.target.value);
+                });
+
+                this.renderControlStationList(); // Add this to initializeUI or constructor
+            }
+
+            addLegend() {
+                const legend = L.control({ position: 'bottomleft' });
+                legend.onAdd = function() {
+                    const div = L.DomUtil.create('div', 'info');
+                    div.style.background = 'rgba(0,0,0,0.8)';
+                    div.style.padding = '10px';
+                    div.style.borderRadius = '8px';
+                    div.style.color = 'white';
+                    div.innerHTML = `
+                        <h4>🛰 Legend</h4>
+                        <div><span style="color: #4CAF50;">●</span> Active Satellite</div>
+                        <div><span style="color: #f44336;">●</span> Inactive Satellite</div>
+                        <div><span style="color: #667eea;">—</span> Orbital Path</div>
+                    `;
+                    return div;
+                };
+                legend.addTo(this.map);
+            }
+
+            async loadSatellitesFromAPI() {
+                // Fetch satellite metadata
+                const satMetaRes = await fetch('/api/satellites');
+                const satMetaData = await satMetaRes.json();
+                // Fetch live positions
+                const posRes = await fetch('/api/positions');
+                const posData = await posRes.json();
+                this.satellites = new Map();
+                // Merge metadata and positions
+                for (const sat of satMetaData.satellites) {
+                    const pos = posData.positions[sat.id];
+                    if (pos) {
+                        this.satellites.set(sat.id, {
+                            id: sat.id,
+                            name: sat.name,
+                            type: sat.type,
+                            country: sat.country,
+                            active: sat.active,
+                            altitude: pos.altitude || 0,
+                            lat: pos.lat,
+                            lon: pos.lon,
+                            norad_id: sat.norad_id,
+                            launch_date: sat.launch_date
+                        });
+                    }
+                }
+                this.renderSatelliteList();
+                // Add to map
+                this.satellites.forEach(sat => {
+                    this.addSatelliteToMap(sat);
+                });
+                this.updateStatistics();
+            }
+
+            addSatelliteToMap(satellite) {
+                const icon = L.divIcon({
+                    html: `<div style="background: ${satellite.active ? '#4CAF50' : '#f44336'}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>`,
+                    iconSize: [16, 16],
+                    className: 'satellite-marker'
+                });
+
+                const marker = L.marker([satellite.lat, satellite.lon], { icon })
+                    .addTo(this.map)
+                    .bindPopup(`
+                        <div style="color: black;">
+                            <h3>${satellite.name}</h3>
+                            <p><strong>Type:</strong> ${satellite.type}</p>
+                            <p><strong>Country:</strong> ${satellite.country}</p>
+                            <p><strong>Altitude:</strong> ${satellite.altitude} km</p>
+                            <p><strong>Status:</strong> ${satellite.active ? 'Active' : 'Inactive'}</p>
+                            <p><strong>Position:</strong> ${satellite.lat.toFixed(4)}°, ${satellite.lon.toFixed(4)}°</p>
+                        </div>
+                    `);
+
+                this.markers.set(satellite.id, marker);
+
+                // Add orbital path simulation
+                if (this.showPaths) {
+                    this.generateOrbitalPath(satellite);
+                }
+            }
+
+            addSatelliteToSidebar(satellite) {
+                const listContainer = document.getElementById('satelliteList');
+                const item = document.createElement('div');
+                item.className = 'satellite-item';
+                item.dataset.id = satellite.id;
+                // --- Pin/Favorite Button ---
+                const pinBtn = document.createElement('button');
+                pinBtn.className = 'fav-btn';
+                pinBtn.title = 'Pin Satellite';
+                pinBtn.innerHTML = '☆';
+                pinBtn.style.float = 'right';
+                pinBtn.style.background = 'none';
+                pinBtn.style.border = 'none';
+                pinBtn.style.color = '#facc15';
+                pinBtn.style.fontSize = '1.3em';
+                pinBtn.style.cursor = 'pointer';
+                pinBtn.style.marginLeft = '10px';
+                // Load pin state
+                const pinKey = `pin_sat_${satellite.id}`;
+                if (localStorage.getItem(pinKey) === '1') {
+                    pinBtn.innerHTML = '★';
+                    pinBtn.classList.add('pinned');
+                }
+                pinBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    const isPinned = localStorage.getItem(pinKey) === '1';
+                    if (isPinned) {
+                        localStorage.setItem(pinKey, '0');
+                        pinBtn.innerHTML = '☆';
+                        pinBtn.classList.remove('pinned');
+                        this.showNotification(`${satellite.name} unpinned`);
+                    } else {
+                        localStorage.setItem(pinKey, '1');
+                        pinBtn.innerHTML = '★';
+                        pinBtn.classList.add('pinned');
+                        this.showNotification(`${satellite.name} pinned!`);
+                    }
+                    this.renderSatelliteList();
+                };
+                item.appendChild(pinBtn);
+                item.innerHTML += `
+                    <div class="satellite-name">
+                        <div class="satellite-status ${satellite.active ? 'status-active' : 'status-inactive'}"></div>
+                        ${satellite.name}
+                    </div>
+                    <div class="satellite-info">
+                        <div>Type: ${satellite.type}</div>
+                        <div>Country: ${satellite.country}</div>
+                        <div>Altitude: ${satellite.altitude} km</div>
+                        <div>Lat: ${satellite.lat.toFixed(4)}°, Lon: ${satellite.lon.toFixed(4)}°</div>
+                    </div>
+                `;
+
+                item.addEventListener('click', () => {
+                    this.selectSatellite(satellite.id);
+                });
+
+                listContainer.appendChild(item);
+            }
+
+            renderSatelliteList() {
+                const listContainer = document.getElementById('satelliteList');
+                listContainer.innerHTML = '';
+                // Sort pinned to top
+                const sats = Array.from(this.satellites.values());
+                sats.sort((a, b) => {
+                    const aPin = localStorage.getItem(`pin_sat_${a.id}`) === '1' ? -1 : 0;
+                    const bPin = localStorage.getItem(`pin_sat_${b.id}`) === '1' ? -1 : 0;
+                    return aPin - bPin;
+                });
+                sats.forEach(sat => this.addSatelliteToSidebar(sat));
+            }
+
+            generateOrbitalPath(satellite) {
+                // Simplified orbital path simulation
+                const points = [];
+                const centerLat = satellite.lat;
+                const centerLon = satellite.lon;
+                
+                for (let i = 0; i <= 100; i++) {
+                    const angle = (i / 100) * 2 * Math.PI;
+                    const lat = centerLat + Math.sin(angle) * 30;
+                    const lon = centerLon + Math.cos(angle) * 60;
+                    points.push([lat, lon]);
+                }
+
+                const pathLine = L.polyline(points, {
+                    color: '#667eea',
+                    weight: 2,
+                    opacity: 0.6,
+                    dashArray: '5, 10'
+                }).addTo(this.map);
+
+                this.paths.set(satellite.id, pathLine);
+            }
+
+            selectSatellite(satelliteId) {
+                // Remove previous selection
+                document.querySelectorAll('.satellite-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+
+                // Add selection to new item
+                const selectedItem = document.querySelector(`[data-id="${satelliteId}"]`);
+                if (selectedItem) {
+                    selectedItem.classList.add('active');
+                }
+
+                const satellite = this.satellites.get(satelliteId);
+                if (satellite && this.markers.has(satelliteId)) {
+                    const marker = this.markers.get(satelliteId);
+                    this.map.setView([satellite.lat, satellite.lon], 6);
+                    marker.openPopup();
+                    this.selectedSatellite = satelliteId;
+                    this.showNotification(`Tracking ${satellite.name}`);
+                }
+            }
+
+            startTracking() {
+                document.getElementById('loadingSpinner').style.display = 'none';
+                if (this.trackingInterval) {
+                    clearInterval(this.trackingInterval);
+                }
+                this.trackingInterval = setInterval(() => {
+                    if (this.isPlaying) {
+                        this.updateFromBackend();
+                    }
+                }, this.updateInterval);
+                // Initial load
+                this.updateFromBackend();
+            }
+
+            updateFromBackend(data) {
+                fetch('/api/positions')
+                    .then(res => res.json())
+                    .then(data => {
+                        for (const [id, info] of Object.entries(data.positions)) {
+                            if (this.satellites.has(id)) {
+                                const sat = this.satellites.get(id);
+                                sat.lat = info.lat;
+                                sat.lon = info.lon;
+                                sat.altitude = info.altitude || sat.altitude;
+                                if (this.markers.has(id)) {
+                                    const marker = this.markers.get(id);
+                                    marker.setLatLng([sat.lat, sat.lon]);
+                                    marker.setPopupContent(`
+                                        <div style="color: black;">
+                                            <h3>${sat.name}</h3>
+                                            <p><strong>Type:</strong> ${sat.type}</p>
+                                            <p><strong>Country:</strong> ${sat.country}</p>
+                                            <p><strong>Altitude:</strong> ${sat.altitude} km</p>
+                                            <p><strong>Status:</strong> ${sat.active ? 'Active' : 'Inactive'}</p>
+                                            <p><strong>Position:</strong> ${sat.lat.toFixed(4)}°, ${sat.lon.toFixed(4)}°</p>
+                                        </div>
+                                    `);
+                                    this.updateSidebarInfo(sat);
+                                }
+                            }
+                        }
+                        this.updateStatistics();
+                    });
+                
+                // Add mock activity for demo
+                if (data && data.positions) {
+                    for (const [id, info] of Object.entries(data.positions)) {
+                        if (this.satellites.has(id)) {
+                            const sat = this.satellites.get(id);
+                            // Simulate a contact event
+                            if (Math.random() < 0.15) {
+                                this.addActivityFeed({
+                                    type: 'contact',
+                                    satellite: sat.name,
+                                    station: this.getRandomStation().name,
+                                    time: new Date().toLocaleTimeString()
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            updateSidebarInfo(satellite) {
+                const item = document.querySelector(`[data-id="${satellite.id}"]`);
+                if (item) {
+                    const infoDiv = item.querySelector('.satellite-info');
+                    infoDiv.innerHTML = `
+                        <div>Type: ${satellite.type}</div>
+                        <div>Country: ${satellite.country}</div>
+                        <div>Altitude: ${satellite.altitude} km</div>
+                        <div>Lat: ${satellite.lat.toFixed(4)}°, Lon: ${satellite.lon.toFixed(4)}°</div>
+                    `;
+                }
+            }
+
+            updateStatistics() {
+                const activeSats = Array.from(this.satellites.values()).filter(s => s.active).length;
+                const avgAltitude = Math.round(
+                    Array.from(this.satellites.values()).reduce((sum, s) => sum + s.altitude, 0) / this.satellites.size
+                );
+
+                document.getElementById('activeSats').textContent = activeSats;
+                document.getElementById('avgAltitude').textContent = `${avgAltitude} km`;
+                document.getElementById('updateInterval').textContent = `${this.updateInterval / 1000}s`;
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+            }
+
+            togglePlayPause() {
+                this.isPlaying = !this.isPlaying;
+                const btn = document.getElementById('playPauseBtn');
+                btn.textContent = this.isPlaying ? '⏸' : '▶';
+                this.showNotification(this.isPlaying ? 'Tracking resumed' : 'Tracking paused');
+            }
+
+            changeSpeed() {
+                const speeds = [5000, 10000, 30000, 60000]; // 5s, 10s, 30s, 1min
+                const currentIndex = speeds.indexOf(this.updateInterval);
+                const nextIndex = (currentIndex + 1) % speeds.length;
+                this.updateInterval = speeds[nextIndex];
+                
+                this.showNotification(`Update speed: ${this.updateInterval / 1000}s`);
+                
+                if (this.trackingInterval) {
+                    clearInterval(this.trackingInterval);
+                    this.startTracking();
+                }
+            }
+
+            togglePaths() {
+                this.showPaths = !this.showPaths;
+                const btn = document.getElementById('pathBtn');
+                btn.style.background = this.showPaths ? 'rgba(102, 126, 234, 0.8)' : 'rgba(0, 0, 0, 0.7)';
+
+                if (this.showPaths) {
+                    this.satellites.forEach(satellite => {
+                        this.generateOrbitalPath(satellite);
+                    });
+                    this.showNotification('Orbital paths enabled');
+                } else {
+                    this.paths.forEach(path => {
+                        this.map.removeLayer(path);
+                    });
+                    this.paths.clear();
+                    this.showNotification('Orbital paths disabled');
+                }
+            }
+
+            toggleInfo() {
+                const panel = document.getElementById('infoPanel');
+                panel.classList.toggle('visible');
+                const btn = document.getElementById('infoBtn');
+                btn.style.background = panel.classList.contains('visible') ? 
+                    'rgba(102, 126, 234, 0.8)' : 'rgba(0, 0, 0, 0.7)';
+            }
+
+            changeView() {
+                const views = ['dark', 'satellite', 'street'];
+                const currentIndex = views.indexOf(this.currentView);
+                const nextIndex = (currentIndex + 1) % views.length;
+                this.currentView = views[nextIndex];
+
+                // Remove current layer
+                this.map.eachLayer(layer => {
+                    if (layer instanceof L.TileLayer) {
+                        this.map.removeLayer(layer);
+                    }
+                });
+
+                // Add new layer
+                this.tileLayers[this.currentView].addTo(this.map);
+                this.showNotification(`Map view: ${this.currentView}`);
+            }
+
+            filterSatellites(query) {
+                const items = document.querySelectorAll('.satellite-item');
+                items.forEach(item => {
+                    const name = item.querySelector('.satellite-name').textContent.toLowerCase();
+                    const info = item.querySelector('.satellite-info').textContent.toLowerCase();
+                    const matches = name.includes(query.toLowerCase()) || info.includes(query.toLowerCase());
+                    item.style.display = matches ? 'block' : 'none';
+                });
+            }
+
+            filterStations(query) {
+                const items = document.querySelectorAll('.control-station-item');
+                items.forEach(item => {
+                    const name = item.textContent.toLowerCase();
+                    item.style.display = name.includes(query.toLowerCase()) ? 'block' : 'none';
+                });
+            }
+
+            showNotification(message) {
+                const notification = document.getElementById('notification');
+                notification.textContent = message;
+                notification.classList.add('show');
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                }, 3000);
+            }
+
+            // --- Control Station Passes UI ---
+            formatTime(timestr) {
+                // Accepts '2025-06-04T09:00:00Z' or '09:00' and returns '09:00 AM' etc.
+                if (!timestr) return '';
+                let d = timestr.includes('T') ? new Date(timestr) : null;
+                if (d) {
+                    let h = d.getHours();
+                    let m = d.getMinutes();
+                    let ampm = h >= 12 ? 'PM' : 'AM';
+                    h = h % 12; if (h === 0) h = 12;
+                    return `${h}:${m.toString().padStart(2, '0')} ${ampm}`;
+                } else {
+                    // fallback: just show as is
+                    return timestr;
+                }
+            }
+
+            renderControlStationPasses(data) {
+                let html = '';
+                for (const [station, info] of Object.entries(data)) {
+                    html += `<div class="control-station-block">
+                        <div class="station-title">${station}</div>`;
+                    if (info.next_passes && info.next_passes.length > 0) {
+                        html += `<div>Next Passes:</div><ul class="sat-pass-list">`;
+                        for (const pass of info.next_passes) {
+                            html += `<li><span class="sat-name">${pass.satellite}</span> <span class="sat-pass-time">${this.formatTime(pass.time)}</span></li>`;
+                        }
+                        html += `</ul>`;
+                    } else {
+                        html += `<div>No upcoming passes.</div>`;
+                    }
+                    if (info.past_passes && info.past_passes.length > 0) {
+                        html += `<div style="margin-top:6px;">Past Satellites:</div><ul class="sat-past-list">`;
+                        for (const pass of info.past_passes) {
+                            html += `<li><span class="sat-name">${pass.satellite}</span> <span class="sat-past-time">${this.formatTime(pass.time)}</span></li>`;
+                        }
+                        html += `</ul>`;
+                    }
+                    html += `</div>`;
+                }
+                document.getElementById('controlStationPasses').innerHTML = html;
+            }
+
+            fetchAndRenderControlStationPasses() {
+                fetch('/api/control_station_passes')
+                    .then(res => res.json())
+                    .then(data => {
+                        this.renderControlStationPasses(data);
+                    });
+            }
+
+            toggleControlStationPasses() {
+                const tab = document.getElementById('controlStationTab');
+                const container = document.getElementById('controlStationPasses');
+                let visible = container.style.display === 'block';
+
+                tab.classList.toggle('active', !visible);
+                container.style.display = visible ? 'none' : 'block';
+
+                if (!visible) {
+                    this.fetchAndRenderControlStationPasses();
+                    this.controlStationPassesInterval = setInterval(() => {
+                        this.fetchAndRenderControlStationPasses();
+                    }, 30000);
+                } else {
+                    clearInterval(this.controlStationPassesInterval);
+                }
+            }
+
+            // --- Station Details Slide-in Panel Logic ---
+            showStationDetailsPanel(station, info) {
+                const panel = document.getElementById('stationDetailsPanel');
+                // Compose HTML
+                let html = `<div class='station-details-header'>
+                    <h2>🏢 ${station.name}</h2>
+                    <button class='station-details-close' id='closeStationDetailsBtn' title='Close'>&times;</button>
+                </div><div class='station-details-body'>`;
+                html += `<div class='station-meta'>
+                    <span><b>Location:</b> ${station.lat.toFixed(3)}, ${station.lon.toFixed(3)}</span>
+                    <span><b>ID:</b> ${station.id}</span>
+                </div>`;
+                // Last contacted satellite
+                if (info.past_passes && info.past_passes.length > 0) {
+                    const last = info.past_passes[info.past_passes.length-1];
+                    html += `<div class='station-status'><span class='dot'></span> Last Satellite: <b>${last.satellite}</b> <span class='sat-past-time'>${this.formatTime(last.time)}</span></div>`;
+                } else {
+                    html += `<div class='station-status'><span class='dot inactive'></span> No recent satellite contact.</div>`;
+                }
+                // Timeline for upcoming passes
+                html += `<div class='timeline-label'>Upcoming Passes</div><div class='timeline'>`;
+                if (info.next_passes && info.next_passes.length > 0) {
+                    info.next_passes.forEach((pass, idx) => {
+                        html += `<div class='timeline-event${idx===0?' next':''}'>
+                            <div class='timeline-dot'></div>
+                            <div class='timeline-content'>
+                                <span class='sat-name'>${pass.satellite}</span>
+                                <span class='sat-pass-time'>${this.formatTime(pass.time)}</span>`;
+                        if (pass.satellite.toLowerCase().includes('demo')) {
+                            html += `<span class='badge demo'>Demo</span>`;
+                        }
+                        html += `</div></div>`;
+                    });
+                } else {
+                    html += `<div class='timeline-empty'>No upcoming passes.</div>`;
+                }
+                html += `</div>`;
+                // Past passes (collapsible)
+                if (info.past_passes && info.past_passes.length > 0) {
+                    html += `<div class='timeline-label' style='margin-top:18px;'>Past Passes</div><ul class='sat-past-list'>`;
+                    info.past_passes.slice().reverse().forEach(pass => {
+                        html += `<li><span class='sat-name'>${pass.satellite}</span> <span class='sat-past-time'>${this.formatTime(pass.time)}</span></li>`;
+                    });
+                    html += `</ul>`;
+                }
+                html += `</div>`;
+                panel.innerHTML = html;
+                panel.classList.add('open');
+                // Close button logic
+                document.getElementById('closeStationDetailsBtn').onclick = () => {
+                    panel.classList.remove('open');
+                };
+            }
+
+            // --- Control Station Sidebar Logic ---
+            getControlStations() {
+                // Hardcoded for demo; ideally fetch from backend
+                return [
+                    { id: 'isro', name: 'ISRO', lat: 13.0649, lon: 77.6336 },
+                    { id: 'nasa', name: 'NASA', lat: 28.5721, lon: -80.6480 },
+                    { id: 'esa', name: 'ESA', lat: 40.4272, lon: -3.7134 }
+                ];
+            }
+            renderControlStationList() {
+                const list = document.getElementById('controlStationList');
+                list.innerHTML = `<h3 style="margin:18px 0 10px 10px; color:#a5b4fc; font-size:1.1em;">Control Stations</h3>`;
+                this.getControlStations().forEach(station => {
+                    const div = document.createElement('div');
+                    div.className = 'control-station-item';
+                    div.textContent = station.name;
+                    div.onclick = () => {
+                        // Show details panel with loading first
+                        this.showStationDetailsPanel(station, { next_passes: [], past_passes: [] });
+                        // Fetch passes for this station only
+                        fetch(`/api/control_station_passes?station=${station.id}`)
+                            .then(res => res.json())
+                            .then(data => {
+                                let stations = data.stations || data;
+                                let info = stations[station.name] || stations[station.id] || { next_passes: [], past_passes: [] };
+                                this.showStationDetailsPanel(station, info);
+                            });
+                    };
+                    // --- Surprise Feature: Favorite Button ---
+                    const favBtn = document.createElement('button');
+                    favBtn.className = 'fav-btn';
+                    favBtn.title = 'Mark as Favorite';
+                    favBtn.innerHTML = '☆';
+                    favBtn.style.float = 'right';
+                    favBtn.style.background = 'none';
+                    favBtn.style.border = 'none';
+                    favBtn.style.color = '#facc15';
+                    favBtn.style.fontSize = '1.3em';
+                    favBtn.style.cursor = 'pointer';
+                    favBtn.style.marginLeft = '10px';
+                    // Load favorite state from localStorage
+                    const favKey = `fav_station_${station.id}`;
+                    if (localStorage.getItem(favKey) === '1') {
+                        favBtn.innerHTML = '★';
+                    }
+                    favBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        const isFav = localStorage.getItem(favKey) === '1';
+                        if (isFav) {
+                            localStorage.setItem(favKey, '0');
+                            favBtn.innerHTML = '☆';
+                            this.showNotification(`${station.name} removed from favorites`);
+                        } else {
+                            localStorage.setItem(favKey, '1');
+                            favBtn.innerHTML = '★';
+                            this.showNotification(`${station.name} added to favorites!`);
+                        }
+                        this.renderControlStationList(); // Refresh to update order
+                    };
+                    div.appendChild(favBtn);
+                    list.appendChild(div);
+                });
+                // --- Sort favorites to top ---
+                const items = Array.from(list.querySelectorAll('.control-station-item'));
+                items.sort((a, b) => {
+                    const aId = this.getControlStations().find(s => s.name === a.textContent.trim().replace('★','').replace('☆',''))?.id;
+                    const bId = this.getControlStations().find(s => s.name === b.textContent.trim().replace('★','').replace('☆',''))?.id;
+                    const aFav = localStorage.getItem(`fav_station_${aId}`) === '1' ? -1 : 0;
+                    const bFav = localStorage.getItem(`fav_station_${bId}`) === '1' ? -1 : 0;
+                    return aFav - bFav;
+                });
+                items.forEach(item => list.appendChild(item));
+            }
+
+            addActivityFeed(event) {
+                this.activityFeed.unshift(event);
+                if (this.activityFeed.length > this.maxActivityFeed) this.activityFeed.pop();
+                this.renderActivityFeed();
+            }
+            renderActivityFeed() {
+                const feed = document.getElementById('activityFeed');
+                if (!feed) return;
+                if (this.activityFeed.length === 0) {
+                    feed.innerHTML = '<div style="color:#bfc9e0;text-align:center;">No recent activity yet.</div>';
+                    return;
+                }
+                feed.innerHTML = this.activityFeed.map(ev => {
+                    if (ev.type === 'contact') {
+                        return `<div style='margin-bottom:10px;'><span style='color:#facc15;'>${ev.time}</span> – <b>${ev.satellite}</b> contacted <b>${ev.station}</b></div>`;
+                    } else if (ev.type === 'pass') {
+                        return `<div style='margin-bottom:10px;'><span style='color:#a5b4fc;'>${ev.time}</span> – <b>${ev.satellite}</b> passed over <b>${ev.station}</b></div>`;
+                    }
+                    return '';
+                }).join('');
+            }
+            setupActivityWidget() {
+                const widget = document.getElementById('recentActivityWidget');
+                const toggleBtn = document.getElementById('toggleActivityWidgetBtn');
+                const closeBtn = document.getElementById('closeActivityWidgetBtn');
+                let isDragging = false, offsetX = 0, offsetY = 0;
+                // Toggle logic
+                toggleBtn.onclick = () => {
+                    widget.style.display = 'block';
+                    toggleBtn.style.display = 'none';
+                };
+                closeBtn.onclick = () => {
+                    widget.style.display = 'none';
+                    toggleBtn.style.display = 'block';
+                };
+                // Drag logic
+                const header = widget.firstElementChild;
+                header.onmousedown = (e) => {
+                    isDragging = true;
+                    offsetX = e.clientX - widget.getBoundingClientRect().left;
+                    offsetY = e.clientY - widget.getBoundingClientRect().top;
+                    document.body.style.userSelect = 'none';
+                };
+                document.onmousemove = (e) => {
+                    if (isDragging) {
+                        widget.style.right = 'auto';
+                        widget.style.left = (e.clientX - offsetX) + 'px';
+                        widget.style.top = (e.clientY - offsetY) + 'px';
+                    }
+                };
+                document.onmouseup = () => {
+                    isDragging = false;
+                    document.body.style.userSelect = '';
+                };
+            }
+            getRandomStation() {
+                const stations = this.getControlStations();
+                return stations[Math.floor(Math.random() * stations.length)];
+            }
+
+            // --- Theme and Color Controls ---
+            loadTheme() {
+                const theme = localStorage.getItem('theme') || 'dark';
+                document.body.classList.toggle('light', theme === 'light');
+                document.getElementById('themeToggleBtn').textContent = theme === 'light' ? '☀️' : '🌙';
+                // Accent
+                const accent = localStorage.getItem('accent') || '#667eea';
+                const accent2 = localStorage.getItem('accent2') || '#764ba2';
+                const bgMain = localStorage.getItem('bgMain') || (theme === 'light' ? '#f4f6fa' : '#232946');
+                const bgPanel = localStorage.getItem('bgPanel') || (theme === 'light' ? '#fff' : '#1a1a2e');
+                document.documentElement.style.setProperty('--accent', accent);
+                document.documentElement.style.setProperty('--accent2', accent2);
+                document.documentElement.style.setProperty('--bg-main', bgMain);
+                document.documentElement.style.setProperty('--bg-panel', bgPanel);
+            }
+            setupThemeControls() {
+                const themeBtn = document.getElementById('themeToggleBtn');
+                themeBtn.onclick = () => {
+                    const isLight = document.body.classList.toggle('light');
+                    localStorage.setItem('theme', isLight ? 'light' : 'dark');
+                    themeBtn.textContent = isLight ? '☀️' : '🌙';
+                    this.loadTheme();
+                };
+                // Accent color
+                const accentPicker = document.getElementById('accentColorPicker');
+                accentPicker.value = localStorage.getItem('accent') || '#667eea';
+                accentPicker.oninput = (e) => {
+                    localStorage.setItem('accent', e.target.value);
+                    document.documentElement.style.setProperty('--accent', e.target.value);
+                };
+                // Background gradient color
+                const bgPicker = document.getElementById('bgColorPicker');
+                bgPicker.value = localStorage.getItem('bgMain') || '#232946';
+                bgPicker.oninput = (e) => {
+                    localStorage.setItem('bgMain', e.target.value);
+                    document.documentElement.style.setProperty('--bg-main', e.target.value);
+                };
+            }
+        }
+
+        // Initialize the tracker
+        const tracker = new SatelliteTracker();
+
+        // Mock server response for initial load
+        setTimeout(() => {
+            const mockData = {
+                positions: {
+                    'cartosat2f': { lat: 28.7041, lon: 77.1025 },
+                    'iss': { lat: -15.7801, lon: -47.9292 },
+                    'hubble': { lat: 41.8781, lon: -87.6298 },
+                    'sentinel1a': { lat: 55.7558, lon: 37.6176 },
+                    'landsat8': { lat: 35.6762, lon: 139.6503 }
+                }
+            };
+            // Simulate network delay
+            setTimeout(() => {
+                tracker.updateFromBackend(mockData);
+            }, 1000);
+        }, 1000);
+
+        // Optionally, fetch once on load (hidden by default)
+        // tracker.fetchAndRenderControlStationPasses();
+        document.getElementById('controlStationTab').addEventListener('click', () => {
+            tracker.toggleControlStationPasses();
+        });
+        // Add dropdown toggle logic after tracker is initialized
+        setTimeout(() => {
+            // Dropdown toggles
+            const satHeader = document.getElementById('satelliteDropdownHeader');
+            const satContent = document.getElementById('satelliteDropdownContent');
+            const satArrow = document.getElementById('satelliteDropdownArrow');
+            satHeader.addEventListener('click', () => {
+                const isOpen = satContent.style.display !== 'none';
+                satContent.style.display = isOpen ? 'none' : 'block';
+                satArrow.textContent = isOpen ? '►' : '▼';
+            });
+            const stationHeader = document.getElementById('stationDropdownHeader');
+            const stationContent = document.getElementById('stationDropdownContent');
+            const stationArrow = document.getElementById('stationDropdownArrow');
+            stationHeader.addEventListener('click', () => {
+                const isOpen = stationContent.style.display !== 'none';
+                stationContent.style.display = isOpen ? 'none' : 'block';
+                stationArrow.textContent = isOpen ? '►' : '▼';
+            });
+        }, 500);
+
+        // Replace satellite list render on load
+        tracker.renderSatelliteList = tracker.renderSatelliteList.bind(tracker);
+        tracker.renderSatelliteList();
+    </script>
+</body>
+</html>

@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 import threading
 import time
 from datetime import datetime, timedelta
+import shutil
 
 app = Flask(__name__)
 
@@ -57,7 +58,7 @@ class SatelliteTracker:
                 latitude=28.5721,
                 longitude=-80.6480,
                 elevation=3.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "baikonur": SpaceCenter(
                 name="Baikonur Cosmodrome",
@@ -65,7 +66,7 @@ class SatelliteTracker:
                 latitude=45.9200,
                 longitude=63.3422,
                 elevation=90.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "cape_canaveral": SpaceCenter(
                 name="Cape Canaveral Space Force Station",
@@ -73,7 +74,7 @@ class SatelliteTracker:
                 latitude=28.4889,
                 longitude=-80.5778,
                 elevation=16.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "vandenberg": SpaceCenter(
                 name="Vandenberg Space Force Base",
@@ -81,7 +82,7 @@ class SatelliteTracker:
                 latitude=34.7420,
                 longitude=-120.5724,
                 elevation=110.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "kourou": SpaceCenter(
                 name="Guiana Space Centre",
@@ -89,7 +90,7 @@ class SatelliteTracker:
                 latitude=5.2389,
                 longitude=-52.7681,
                 elevation=50.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "plesetsk": SpaceCenter(
                 name="Plesetsk Cosmodrome",
@@ -97,7 +98,7 @@ class SatelliteTracker:
                 latitude=62.9572,
                 longitude=40.5769,
                 elevation=118.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "xichang": SpaceCenter(
                 name="Xichang Satellite Launch Center",
@@ -105,7 +106,7 @@ class SatelliteTracker:
                 latitude=28.2467,
                 longitude=102.0264,
                 elevation=1825.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "jiuquan": SpaceCenter(
                 name="Jiuquan Satellite Launch Center",
@@ -113,7 +114,7 @@ class SatelliteTracker:
                 latitude=40.9603,
                 longitude=100.2914,
                 elevation=1000.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "tanegashima": SpaceCenter(
                 name="Tanegashima Space Center",
@@ -121,7 +122,7 @@ class SatelliteTracker:
                 latitude=30.4008,
                 longitude=130.9681,
                 elevation=70.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "sriharikota": SpaceCenter(
                 name="Satish Dhawan Space Centre",
@@ -129,7 +130,7 @@ class SatelliteTracker:
                 latitude=13.7199,
                 longitude=80.2304,
                 elevation=3.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "palmachim": SpaceCenter(
                 name="Palmachim Airbase",
@@ -137,7 +138,7 @@ class SatelliteTracker:
                 latitude=31.8947,
                 longitude=34.6919,
                 elevation=45.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
             ),
             "wallops": SpaceCenter(
                 name="Wallops Flight Facility",
@@ -145,7 +146,39 @@ class SatelliteTracker:
                 latitude=37.8402,
                 longitude=-75.4878,
                 elevation=11.0,
-                min_elevation_angle=10.0
+                min_elevation_angle=0.0
+            ),
+            "esa": SpaceCenter(
+                name="ESA",
+                country="Europe",
+                latitude=40.4272,
+                longitude=-3.7134,
+                elevation=0.0,
+                min_elevation_angle=0.0
+            ),
+            "isro": SpaceCenter(
+                name="ISRO",
+                country="India",
+                latitude=13.7199,
+                longitude=80.2305,
+                elevation=0.0,
+                min_elevation_angle=0.0
+            ),
+            "nasa": SpaceCenter(
+                name="NASA",
+                country="USA",
+                latitude=28.5721,
+                longitude=-80.6480,
+                elevation=0.0,
+                min_elevation_angle=0.0
+            ),
+            "svalbard": SpaceCenter(
+                name="Svalbard Station",
+                country="Norway",
+                latitude=78.2306,
+                longitude=15.4078,
+                elevation=0.0,
+                min_elevation_angle=0.0
             )
         }
         
@@ -332,7 +365,7 @@ class SatelliteTracker:
         return elevation, azimuth
     
     def predict_next_passes(self, sat_id: str, center_id: str, 
-                           duration_hours: int = 48) -> List[Dict]:
+                           duration_hours: int = 87600) -> List[Dict]:
         """Predict next passes of a satellite over a space center"""
         if sat_id not in self.satellite_objects or center_id not in self.space_centers:
             return []
@@ -346,7 +379,7 @@ class SatelliteTracker:
         
         # Check every minute for the specified duration
         for i in range(duration_hours * 60):
-            check_time = now + datetime.timedelta(minutes=i)
+            check_time = now + timedelta(minutes=i)
             jd, fr = jday(check_time.year, check_time.month, check_time.day,
                          check_time.hour, check_time.minute, check_time.second)
             
@@ -386,7 +419,7 @@ class SatelliteTracker:
                 else:
                     if current_pass is not None:
                         # End of current pass
-                        current_pass['end_time'] = check_time - datetime.timedelta(minutes=1)
+                        current_pass['end_time'] = check_time - timedelta(minutes=1)
                         passes.append({
                             'satellite_id': sat_id,
                             'satellite_name': self.satellites[sat_id].name,
@@ -404,7 +437,7 @@ class SatelliteTracker:
         
         # Handle case where pass extends beyond our check period
         if current_pass is not None:
-            current_pass['end_time'] = now + datetime.timedelta(hours=duration_hours)
+            current_pass['end_time'] = now + timedelta(hours=duration_hours)
             passes.append({
                 'satellite_id': sat_id,
                 'satellite_name': self.satellites[sat_id].name,
@@ -421,7 +454,7 @@ class SatelliteTracker:
         
         return passes
     
-    def get_all_upcoming_passes(self, duration_hours: int = 24) -> Dict[str, List[Dict]]:
+    def get_all_upcoming_passes(self, duration_hours: int = 87600) -> Dict[str, List[Dict]]:
         """Get all upcoming passes for all satellites over all space centers"""
         all_passes = {}
         
@@ -446,7 +479,7 @@ class SatelliteTracker:
             next_passes = []
             
             for center_id, center in self.space_centers.items():
-                passes = self.predict_next_passes(sat_id, center_id, 24)
+                passes = self.predict_next_passes(sat_id, center_id, 87600)
                 if passes:
                     next_passes.append(passes[0])  # Get the first (earliest) pass
             
@@ -559,7 +592,7 @@ class SatelliteTracker:
         
         for i in range(points):
             # Calculate time offset
-            time_offset = datetime.timedelta(hours=(duration_hours * i / points))
+            time_offset = timedelta(hours=(duration_hours * i / points))
             future_time = now + time_offset
             
             jd, fr = jday(future_time.year, future_time.month, future_time.day,
@@ -644,78 +677,26 @@ class SatelliteTracker:
         lon = atan2(y, x)
         return degrees(lat), degrees(lon)
 
-# Initialize the tracker
-tracker = SatelliteTracker()
-
-# Background TLE update (runs every 6 hours)
-def background_tle_update():
-    while True:
-        time.sleep(6 * 3600)  # 6 hours
-        tracker.update_tle_data()
-
-tle_update_thread = threading.Thread(target=background_tle_update, daemon=True)
-tle_update_thread.start()
-
-# Example control stations (add more as needed)
-CONTROL_STATIONS = [
-    {
-        'name': 'ISRO',
-        'lat': 13.0649,
-        'lon': 77.6336
-    },
-    {
-        'name': 'NASA',
-        'lat': 28.5721,
-        'lon': -80.6480
-    },
-    {
-        'name': 'ESA',
-        'lat': 40.4272,
-        'lon': -3.7134
-    }
-]
-
-def predict_passes(station, satellites, now=None, horizon_deg=10, max_results=3):
-    # Dummy implementation: finds satellites currently above the horizon and next 3 closest by distance
-    # In a real app, use SGP4 or pyorbital to predict actual pass times
-    if now is None:
-        now = datetime.utcnow()
-    results = []
-    past = []
-    for sat in satellites:
-        # Calculate distance from station to satellite subpoint
-        dlat = sat['lat'] - station['lat']
-        dlon = sat['lon'] - station['lon']
-        dist = (dlat**2 + dlon**2)**0.5
-        # Dummy: if within 10 deg, it's overhead now
-        if abs(dlat) < 10 and abs(dlon) < 10:
-            results.append({
-                'satellite': sat['name'],
-                'time': now.strftime('%H:%M UTC'),
-                'status': 'now'
-            })
+def download_global_tle(tle_path='tle/all_active.txt', url='https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle'):
+    """Download the global TLE file if not present or older than 1 day."""
+    try:
+        if not os.path.exists('tle'):
+            os.makedirs('tle')
+        if os.path.exists(tle_path):
+            mtime = os.path.getmtime(tle_path)
+            age_hours = (time.time() - mtime) / 3600
+            if age_hours < 24:
+                return  # Already up to date
+        print(f"🌐 Downloading global TLE from {url} ...")
+        r = requests.get(url, timeout=60)
+        if r.status_code == 200:
+            with open(tle_path, 'w', encoding='utf-8') as f:
+                f.write(r.text)
+            print(f"✅ Downloaded and saved {tle_path}")
         else:
-            # Predict next pass in X minutes (dummy: use distance as minutes)
-            pass_time = now + timedelta(minutes=int(dist*6))
-            results.append({
-                'satellite': sat['name'],
-                'time': pass_time.strftime('%H:%M UTC'),
-                'status': 'upcoming'
-            })
-    # Sort by soonest time, only keep 3
-    results.sort(key=lambda x: x['time'])
-    upcoming = [r for r in results if r['status'] == 'upcoming'][:max_results]
-    now_sats = [r for r in results if r['status'] == 'now']
-    # Dummy: move any satellites with time in the past to 'past'
-    for r in results:
-        t = datetime.strptime(r['time'], '%H:%M UTC')
-        if t < now:
-            past.append(r)
-    return {
-        'now': now_sats,
-        'upcoming': upcoming,
-        'past': past
-    }
+            print(f"❌ Failed to download TLE: HTTP {r.status_code}")
+    except Exception as e:
+        print(f"❌ Error downloading global TLE: {e}")
 
 @app.route('/')
 def home():
@@ -795,7 +776,7 @@ def api_next_passes():
 @app.route('/api/passes/<sat_id>/<center_id>')
 def api_specific_passes(sat_id, center_id):
     """Get passes of a specific satellite over a specific space center"""
-    duration = request.args.get('duration', default=48, type=int)
+    duration = request.args.get('duration', default=24, type=int)
     passes = tracker.predict_next_passes(sat_id, center_id, duration)
     return jsonify({
         'satellite_id': sat_id,
@@ -812,39 +793,32 @@ def api_update_tle():
 
 @app.route('/api/control_station_passes')
 def control_station_passes():
-    # Use real SGP4-based pass predictions for each control station
+    station_param = request.args.get('station', '').lower()
     now = datetime.utcnow()
     station_results = {}
-    # For each control station, find next 3 upcoming and recent past passes
+
     for station in CONTROL_STATIONS:
         station_name = station['name']
-        # Find the corresponding SpaceCenter object if available
+        if station_param and station_param != station_name.lower():
+            continue  # 🔥 Only process the requested station if a filter is given
+
         center_obj = None
         for center in tracker.space_centers.values():
-            if center.name.lower().startswith(station_name.lower()):
+            if center.name.lower() == station['name'].lower():
                 center_obj = center
                 break
-        # If not found, use lat/lon from CONTROL_STATIONS (fallback, not as accurate)
+
         passes = []
-        # --- MOCK: Always add a fake satellite pass for demo ---
-        passes.append({
-            'satellite': 'DemoSat',
-            'satellite_id': 'demosat',
-            'start_time': now.strftime('%Y-%m-%d %H:%M:%S UTC'),
-            'max_elevation_time': (now + timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M:%S UTC'),
-            'max_elevation_degrees': 89.0,
-            'visibility': 'Excellent',
-        })
         for sat_id, sat_info in tracker.satellites.items():
-            # Use the best available center_id for this station
             center_id = None
             for cid, c in tracker.space_centers.items():
                 if c.name.lower().startswith(station_name.lower()):
                     center_id = cid
                     break
             if center_id:
-                sat_passes = tracker.predict_next_passes(sat_id, center_id, duration_hours=24)
-                for p in sat_passes:
+                sat_passes = tracker.predict_next_passes(sat_id, center_id, 24)
+                if sat_passes:
+                    p = sat_passes[0]
                     passes.append({
                         'satellite': sat_info.name,
                         'satellite_id': sat_id,
@@ -853,23 +827,198 @@ def control_station_passes():
                         'max_elevation_degrees': p['max_elevation_degrees'],
                         'visibility': p['visibility'],
                     })
-        # Sort passes by start_time
+
         passes.sort(key=lambda x: x['start_time'])
-        # Split into upcoming and past
-        next_passes = []
-        past_passes = []
-        for p in passes:
-            pass_time = datetime.strptime(p['max_elevation_time'], "%Y-%m-%d %H:%M:%S UTC")
-            if pass_time > now:
-                next_passes.append(p)
-            else:
-                past_passes.append(p)
-        # Only keep next 3 upcoming and last 3 past
-        station_results[station_name] = {
-            'next_passes': next_passes[:3],
-            'past_passes': past_passes[-3:][::-1]  # most recent first
+        next_passes = passes[:3]  # 🎯 Show up to 3 upcoming passes
+        past_passes = []  # You can enhance this later
+
+        station_results[station_name.lower()] = {
+            'next_passes': next_passes,
+            'past_passes': past_passes
         }
+        print(f"\n📡 Station Requested: {station_param}")
+        print(json.dumps(station_results, indent=2))
+
     return jsonify({'stations': station_results})
+
+@app.route('/api/search-satellites')
+def api_search_satellites():
+    """Search all satellites in the global TLE file by name or NORAD ID."""
+    query = request.args.get('q', '').strip().lower()
+    if not query:
+        return jsonify({'error': 'No query provided'}), 400
+    tle_path = 'tle/all_active.txt'
+    download_global_tle(tle_path)
+    results = []
+    try:
+        with open(tle_path, 'r', encoding='utf-8') as f:
+            # Read and filter out blank lines
+            lines = [line.strip() for line in f if line.strip()]
+        i = 0
+        while i < len(lines) - 2:
+            name = lines[i]
+            line1 = lines[i+1]
+            line2 = lines[i+2]
+            # Ensure correct TLE format
+            if line1.startswith('1 ') and line2.startswith('2 '):
+                norad_id = line1.split()[1] if len(line1.split()) > 1 else ''
+                norad_id_stripped = norad_id.rstrip('U').lstrip('0')
+                query_stripped = query.rstrip('u').lstrip('0')
+                # Match by name (case-insensitive, stripped)
+                name_match = query in name.lower()
+                # Match by NORAD ID (with or without trailing U, leading zeros)
+                norad_match = (
+                    query == norad_id.lower() or
+                    query == norad_id_stripped.lower() or
+                    query_stripped == norad_id.lower() or
+                    query_stripped == norad_id_stripped.lower()
+                )
+                if name_match or norad_match:
+                    results.append({
+                        'name': name,
+                        'norad_id': norad_id,
+                        'tle_line1': line1,
+                        'tle_line2': line2
+                    })
+                    if len(results) >= 20:
+                        break  # Limit results for performance
+                i += 3
+            else:
+                i += 1  # Skip to next line if not a valid TLE group
+        return jsonify({'results': results, 'count': len(results)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/position-by-tle', methods=['POST'])
+def api_position_by_tle():
+    """Compute current position from TLE lines (for searched satellites)."""
+    data = request.get_json()
+    if not data or 'line1' not in data or 'line2' not in data:
+        return jsonify({'error': 'Missing TLE lines'}), 400
+    line1 = data['line1']
+    line2 = data['line2']
+    try:
+        sat = Satrec.twoline2rv(line1, line2)
+        now = datetime.utcnow()
+        jd, fr = jday(now.year, now.month, now.day, now.hour, now.minute, now.second)
+        e, r, v = sat.sgp4(jd, fr)
+        if e != 0:
+            return jsonify({'error': f'SGP4 error code: {e}'}), 400
+        x, y, z = r
+        R = sqrt(x**2 + y**2 + z**2)
+        lat = degrees(asin(z / R))
+        lon = degrees(atan2(y, x))
+        alt = R - 6371.0  # Earth radius in km
+        return jsonify({
+            'lat': lat,
+            'lon': lon,
+            'altitude': alt
+        })
+    except Exception as ex:
+        return jsonify({'error': str(ex)}), 500
+
+# Initialize the tracker
+tracker = SatelliteTracker()
+
+# Background TLE update (runs every 6 hours)
+def background_tle_update():
+    while True:
+        time.sleep(6 * 3600)  # 6 hours
+        tracker.update_tle_data()
+
+tle_update_thread = threading.Thread(target=background_tle_update, daemon=True)
+tle_update_thread.start()
+
+# Example control stations (add more as needed)
+CONTROL_STATIONS = [
+    {
+        'name': 'ISRO',
+        'lat': 13.0649,
+        'lon': 77.6336
+    },
+    {
+        'name': 'NASA',
+        'lat': 28.5721,
+        'lon': -80.6480
+    },
+    {
+        'name': 'ESA',
+        'lat': 40.4272,
+        'lon': -3.7134
+    },
+    {
+        'name': 'JAXA',
+        'lat': 30.4008,
+        'lon': 130.9681
+    },
+    {
+        'name': 'Roscosmos',
+        'lat': 62.9572,
+        'lon': 40.5769
+    },
+    {
+        'name': 'CNSA',
+        'lat': 28.2467,
+        'lon': 102.0264
+    },
+    {
+        'name': 'ISRAEL',
+        'lat': 31.8947,
+        'lon': 34.6919
+    },
+    {
+        'name': 'Arianespace',
+        'lat': 5.2389,
+        'lon': -52.7681
+    },
+    {
+        'name': 'Wallops',
+        'lat': 37.8402,
+        'lon': -75.4878
+    }
+]
+
+def predict_passes(station, satellites, now=None, horizon_deg=10, max_results=3):
+    # Dummy implementation: finds satellites currently above the horizon and next 3 closest by distance
+    # In a real app, use SGP4 or pyorbital to predict actual pass times
+    if now is None:
+        now = datetime.utcnow()
+    results = []
+    past = []
+    for sat in satellites:
+        # Calculate distance from station to satellite subpoint
+        dlat = sat['lat'] - station['lat']
+        dlon = sat['lon'] - station['lon']
+        dist = (dlat**2 + dlon**2)**0.5
+        # Dummy: if within 10 deg, it's overhead now
+        if abs(dlat) < 10 and abs(dlon) < 10:
+            results.append({
+                'satellite': sat['name'],
+                'time': now.strftime('%H:%M UTC'),
+                'status': 'now'
+            })
+        else:
+            # Predict next pass in X minutes (dummy: use distance as minutes)
+            pass_time = now + timedelta(minutes=int(dist*6))
+            results.append({
+                'satellite': sat['name'],
+                'time': pass_time.strftime('%H:%M UTC'),
+                'status': 'upcoming'
+            })
+    # Sort by soonest time, only keep 3
+    results.sort(key=lambda x: x['time'])
+    upcoming = [r for r in results if r['status'] == 'upcoming'][:max_results]
+    now_sats = [r for r in results if r['status'] == 'now']
+    # Dummy: move any satellites with time in the past to 'past'
+    for r in results:
+        t = datetime.strptime(r['time'], '%H:%M UTC')
+        if t < now:
+            past.append(r)
+    return {
+        'now': now_sats,
+        'upcoming': upcoming,
+        'past': past
+    }
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

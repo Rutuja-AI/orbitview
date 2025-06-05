@@ -624,6 +624,7 @@
 <body>
     <div class="container">
         <div class="sidebar" id="sidebar">
+            <button id="closeSidebarBtn" title="Close Sidebar" style="position:absolute;top:16px;right:16px;background:rgba(0,0,0,0.5);color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:1.2em;cursor:pointer;z-index:1001;">✖</button>
             <div class="sidebar-header">
                 <h1>🛰 OrbitView Pro</h1>
                 <p>Real-time satellite tracking</p>
@@ -637,6 +638,8 @@
                         <span class="search-icon">🔍</span>
                     </div>
                     <div class="satellite-list" id="satelliteList"></div>
+                    <!-- Search results dropdown -->
+                    <div id="satSearchResults" style="position:absolute;left:10px;right:10px;top:60px;z-index:1002;background:rgba(30,34,60,0.98);border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,0.18);display:none;max-height:320px;overflow-y:auto;"></div>
                 </div>
             </div>
             <!-- Ground Stations Dropdown -->
@@ -702,19 +705,8 @@
     </div>
     <button id="toggleActivityWidgetBtn" title="Show Recent Activity" style="position:fixed;bottom:30px;right:30px;z-index:3001;background:#667eea;color:#fff;border:none;border-radius:50%;width:54px;height:54px;font-size:1.7em;box-shadow:0 4px 16px rgba(0,0,0,0.18);cursor:pointer;">🕒</button>
 
-    <!-- Add Control Station Passes Tab and Section -->
-    <button id="controlStationTab">Control Station Passes</button>
-    <div id="controlStationPasses"></div>
-
     <!-- Station Details Panel -->
     <div id="stationDetailsPanel"></div>
-
-    <!-- Theme/Color Controls -->
-    <div style="position:fixed;top:24px;right:36px;z-index:3002;display:flex;gap:12px;align-items:center;">
-        <button id="themeToggleBtn" title="Toggle Dark/Light Mode" style="background:#232946;color:#fff;border:none;border-radius:50%;width:38px;height:38px;font-size:1.3em;box-shadow:0 2px 8px rgba(0,0,0,0.12);cursor:pointer;">🌙</button>
-        <input type="color" id="accentColorPicker" title="Pick Accent Color" style="width:32px;height:32px;border:none;outline:none;cursor:pointer;border-radius:50%;background:transparent;">
-        <input type="color" id="bgColorPicker" title="Pick Background Gradient" style="width:32px;height:32px;border:none;outline:none;cursor:pointer;border-radius:50%;background:transparent;">
-    </div>
 
     <script>
         // Enhanced Satellite Tracker
@@ -732,6 +724,14 @@
                 this.activityFeed = [];
                 this.maxActivityFeed = 30;
                 
+                this.groundStationMeta = new Map([
+                    // Example metadata; extend as needed
+                    ['isro', { country: 'India', type: 'Space Agency', city: 'Bangalore' }],
+                    ['nasa', { country: 'USA', type: 'Space Agency', city: 'Cape Canaveral' }],
+                    ['esa', { country: 'Europe', type: 'Space Agency', city: 'Madrid' }],
+                    ['svalbard', { country: 'Norway', type: 'Ground Station', city: 'Svalbard' }]
+                ]);
+
                 this.initializeMap();
                 this.initializeUI();
                 this.loadSatellitesFromAPI();
@@ -795,6 +795,114 @@
                     this.filterStations(e.target.value);
                 });
 
+                // --- Satellite global search integration ---
+                const searchInput = document.getElementById('searchInputSat');
+                const resultsBox = document.getElementById('satSearchResults');
+                let searchTimeout = null;
+                searchInput.addEventListener('input', (e) => {
+                    const q = e.target.value.trim();
+                    if (searchTimeout) clearTimeout(searchTimeout);
+                    if (!q) {
+                        resultsBox.style.display = 'none';
+                        this.filterSatellites('');
+                        return;
+                    }
+                    searchTimeout = setTimeout(() => {
+                        fetch(`/api/search-satellites?q=${encodeURIComponent(q)}`)
+                            .then(res => res.json())
+                            .then(data => {
+                                if (data.results && data.results.length > 0) {
+                                    resultsBox.innerHTML = data.results.map(sat => `
+                                        <div class="sat-search-result" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #232946;" data-norad="${sat.norad_id}">
+                                            <b>${sat.name}</b> <span style="color:#a5b4fc;font-size:0.95em;">(${sat.norad_id || ''})</span><br>
+                                            <span style="font-size:0.93em;color:#bfc9e0;">${sat.tle_line1 || ''}</span>
+                                        </div>
+                                    `).join('');
+                                    resultsBox.style.display = 'block';
+                                } else {
+                                    resultsBox.innerHTML = '<div style="padding:12px;color:#bfc9e0;">No results found.</div>';
+                                    resultsBox.style.display = 'block';
+                                }
+                            });
+                    }, 250);
+                });
+                // Hide results on blur (with delay for click)
+                searchInput.addEventListener('blur', () => setTimeout(() => { resultsBox.style.display = 'none'; }, 200));
+                // Handle click on search result
+                resultsBox.addEventListener('mousedown', async (e) => {
+                    let el = e.target.closest('.sat-search-result');
+                    if (!el) return;
+                    const norad = el.getAttribute('data-norad');
+                    try {
+                        const tleRes = await fetch(`/api/search-satellites?q=${norad}`);
+                        if (!tleRes.ok) {
+                            this.showNotification('Error fetching TLE: ' + tleRes.statusText);
+                            return;
+                        }
+                        const data = await tleRes.json();
+                        if (!data.results || data.results.length === 0) {
+                            this.showNotification('No TLE found for this satellite.');
+                            return;
+                        }
+                        const sat = data.results[0];
+                        // Fetch position from backend using TLE
+                        const tlePayload = {
+                            name: sat.name,
+                            line1: sat.tle_line1,
+                            line2: sat.tle_line2
+                        };
+                        const posRes = await fetch('/api/position-by-tle', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(tlePayload)
+                        });
+                        if (!posRes.ok) {
+                            this.showNotification('Error fetching position: ' + posRes.statusText);
+                            return;
+                        }
+                        const posData = await posRes.json();
+                        if (posData.error) {
+                            this.showNotification('Position error: ' + posData.error);
+                            return;
+                        }
+                        const satId = sat.norad_id;
+                        // --- ENHANCEMENT: Try to fill in type/country/launch_date from existing metadata ---
+                        let meta = Array.from(this.satellites.values()).find(s => String(s.norad_id) === String(satId));
+                        const satObj = {
+                            id: satId,
+                            name: sat.name,
+                            type: meta ? meta.type : 'Unknown',
+                            country: meta ? meta.country : 'Unknown',
+                            active: true,
+                            altitude: posData.altitude || 0,
+                            lat: posData.lat,
+                            lon: posData.lon,
+                            norad_id: satId,
+                            launch_date: meta ? meta.launch_date : ''
+                        };
+                        this.satellites.set(satId, satObj);
+                        // Always add or update marker
+                        if (!this.markers.has(satId)) {
+                            this.addSatelliteToMap(satObj);
+                        }
+                        this.renderSatelliteList();
+                        this.showNotification(`${sat.name} added to tracking list!`);
+                        // Center and open popup
+                        setTimeout(() => {
+                            if (this.markers.has(satId)) {
+                                this.map.setView([satObj.lat, satObj.lon], 6, { animate: true });
+                                this.markers.get(satId).openPopup();
+                                this.selectedSatellite = satId;
+                            }
+                        }, 200);
+                    } catch (err) {
+                        this.showNotification('Error: ' + (err.message || err));
+                    }
+                    resultsBox.style.display = 'none';
+                    searchInput.value = '';
+                });
+
+
                 this.renderControlStationList(); // Add this to initializeUI or constructor
             }
 
@@ -824,8 +932,6 @@
                 // Fetch live positions
                 const posRes = await fetch('/api/positions');
                 const posData = await posRes.json();
-                this.satellites = new Map();
-                // Merge metadata and positions
                 for (const sat of satMetaData.satellites) {
                     const pos = posData.positions[sat.id];
                     if (pos) {
@@ -988,6 +1094,12 @@
                 }
 
                 const satellite = this.satellites.get(satelliteId);
+
+                // 🔧 FIX: Ensure marker exists
+                if (satellite && !this.markers.has(satelliteId)) {
+                    this.addSatelliteToMap(satellite);
+                }
+
                 if (satellite && this.markers.has(satelliteId)) {
                     const marker = this.markers.get(satelliteId);
                     this.map.setView([satellite.lat, satellite.lon], 6);
@@ -1274,8 +1386,9 @@
                             <div class='timeline-dot'></div>
                             <div class='timeline-content'>
                                 <span class='sat-name'>${pass.satellite}</span>
-                                <span class='sat-pass-time'>${this.formatTime(pass.time)}</span>`;
-                        if (pass.satellite.toLowerCase().includes('demo')) {
+                                <span class='sat-pass-time'>${this.formatTime(pass.max_elevation_time || pass.time)}</span>`;
+                        // Only show Demo badge if satellite is DemoSat
+                        if (pass.satellite && pass.satellite.toLowerCase().includes('demo')) {
                             html += `<span class='badge demo'>Demo</span>`;
                         }
                         html += `</div></div>`;
@@ -1307,7 +1420,8 @@
                 return [
                     { id: 'isro', name: 'ISRO', lat: 13.0649, lon: 77.6336 },
                     { id: 'nasa', name: 'NASA', lat: 28.5721, lon: -80.6480 },
-                    { id: 'esa', name: 'ESA', lat: 40.4272, lon: -3.7134 }
+                    { id: 'esa', name: 'ESA', lat: 40.4272, lon: -3.7134 },
+                    { id: 'svalbard', name: 'Svalbard Station', lat: 78.2306, lon: 15.4078 }
                 ];
             }
             renderControlStationList() {
@@ -1316,7 +1430,21 @@
                 this.getControlStations().forEach(station => {
                     const div = document.createElement('div');
                     div.className = 'control-station-item';
-                    div.textContent = station.name;
+                    // --- ENRICH: Lookup metadata for this station ---
+                    const meta = this.groundStationMeta.get(station.id) || {};
+                    // Compose display name with metadata (optional, adjust as needed)
+                    div.innerHTML = `
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span>
+                                <b>${station.name}</b>
+                                <span style="color:#a5b4fc;font-size:0.95em;">(${meta.country || 'Unknown'})</span>
+                            </span>
+                        </div>
+                        <div style="font-size:0.93em;color:#bfc9e0;">
+                            Type: ${meta.type || 'Unknown'}<br>
+                            City: ${meta.city || 'Unknown'}
+                        </div>
+                    `;
                     div.onclick = () => {
                         // Show details panel with loading first
                         this.showStationDetailsPanel(station, { next_passes: [], past_passes: [] });
@@ -1325,7 +1453,8 @@
                             .then(res => res.json())
                             .then(data => {
                                 let stations = data.stations || data;
-                                let info = stations[station.name] || stations[station.id] || { next_passes: [], past_passes: [] };
+                                // 🧠 Fix key mismatch: ensure station.id is lowercase when accessing stations object to get correct info
+                                let info = stations[station.id.toLowerCase()] || { next_passes: [], past_passes: [] };
                                 this.showStationDetailsPanel(station, info);
                             });
                     };
@@ -1478,6 +1607,11 @@
         // Initialize the tracker
         const tracker = new SatelliteTracker();
 
+        // Sidebar close button logic
+        document.getElementById('closeSidebarBtn').addEventListener('click', function() {
+            document.getElementById('sidebar').classList.add('collapsed');
+        });
+
         // Mock server response for initial load
         setTimeout(() => {
             const mockData = {
@@ -1510,6 +1644,7 @@
                 const isOpen = satContent.style.display !== 'none';
                 satContent.style.display = isOpen ? 'none' : 'block';
                 satArrow.textContent = isOpen ? '►' : '▼';
+                satHeader.classList.toggle('collapsed', isOpen);
             });
             const stationHeader = document.getElementById('stationDropdownHeader');
             const stationContent = document.getElementById('stationDropdownContent');
@@ -1518,6 +1653,7 @@
                 const isOpen = stationContent.style.display !== 'none';
                 stationContent.style.display = isOpen ? 'none' : 'block';
                 stationArrow.textContent = isOpen ? '►' : '▼';
+                stationHeader.classList.toggle('collapsed', isOpen);
             });
         }, 500);
 
